@@ -1,0 +1,187 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+## Combining tables
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyverse)
+library(ggrepel)
+library(dslabs)
+library(table1) # for table generation
+library('yarrr') # for color palettes
+library(mice) # for missing value
+library(corrplot) # for correlation plot
+library(ResourceSelection) # GOF for logistic regression model
+library(LogisticDx) # GOF: Discrimination
+library(caret)
+```
+
+The information we need for a given analysis may not be in just one table. Here we use a simple example to illustrate the general challenge of combining tables.
+
+```{r}
+data2013 <- read_csv("2013_NAomit.csv")
+head(data2013)
+mean(data2013$age2,na.rm=TRUE)
+sd(data2013$age2,na.rm=TRUE)
+```
+
+Data Set Partition
+```{r}
+set.seed(1)
+train.index <- sample(c(1:dim(data2013)[1]), dim(data2013)[1]*0.6)
+valid.index <- setdiff(c(1:dim(data2013)[1]), train.index)
+                      
+train.df <- data2013[train.index, ]
+valid.df <- data2013[valid.index, ]
+#write.csv(train.df, file="train.df.csv",row.names = FALSE)
+#write.csv(valid.df, file="valid.df.csv",row.names = FALSE)
+```
+
+
+#### Preliminary Statistics
+```{r, warning=FALSE}
+names(data2013)
+data2013$suicide_chr[data2013$suicide2 == 1] <- 'Yes'
+data2013$suicide_chr[data2013$suicide2 == 0] <- 'No'
+table(data2013$suicide_chr)
+round(mean(data2013$suicide2), 2)
+
+data2013.fac <- data2013
+data2013.fac$age2 <- as.factor(data2013.fac$age2)
+data2013.fac$drive_drink2 <- as.factor(data2013.fac$drive_drink2)
+data2013.fac$smoke2 <- as.factor(data2013.fac$smoke2)
+data2013.fac$marijuana2 <- as.factor(data2013.fac$marijuana2)
+data2013.fac$sexual2 <- as.factor(data2013.fac$sexual2)
+data2013.fac$PE2 <- as.factor(data2013.fac$PE2)
+data2013.fac$UWCBs <- as.factor(data2013.fac$UWCBs)
+
+
+table1::label(data2013.fac$sex2) <- "Sex"
+table1::label(data2013.fac$age2) <- "Age"
+table1::units(data2013.fac$age2) <- "years"
+table1::label(data2013.fac$race2) <- "Race"
+table1::label(data2013.fac$drive_drink2) <- "Drive a car after drinking alcohol"
+table1::label(data2013.fac$smoke2) <- "Smoke"
+table1::label(data2013.fac$alcohol2) <- "Alcohol"
+table1::label(data2013.fac$marijuana2) <- "Marijuana"
+table1::label(data2013.fac$sexual2) <- "Sexual Behavior"
+table1::label(data2013.fac$PE2) <- "Physical Education Attendance"
+table1::units(data2013.fac$PE2) <- "#days/week"
+table1::label(data2013.fac$weight.management2) <- "Weight Management"
+table1::label(data2013.fac$UWCBs) <- "Unhealthy Weight Control Behaviors"
+
+table1(~ sex2 + age2 + race2 + BMI + drive_drink2 + smoke2 + alcohol2 + marijuana2+sexual2+PE2+weight.management2 + UWCBs | suicide_chr, data=data2013.fac,
+        caption = 'Table 2: Summary statistics of the dataset' )
+```
+
+```{r}
+hist(data2013$age2,xlab='Age, years', main = "Histogram of Age")
+hist(data2013$BMI,xlab='BMI, kg/m2', main = "Histogram of BMI")
+
+```
+
+
+#### Logistic Regression
+From the step regression, the selected variables include race, drive_drink, sexual, weight management, PE, BMI, marijuana, smoke, alcohol, condom, age, sex, and UWCBs, variable `condom` is excluded.
+
+```{r}
+suicide.glm <- glm(suicide2 ~ sex2 + age2 + race2 + BMI +
+                     drive_drink2 + smoke2 + alcohol2 + marijuana2 + sexual2 + condom2 + PE2 +
+                     weight.management2 + UWCBs, data = train.df, family=binomial())
+summary(suicide.glm)
+train.complete <- na.omit(train.df)
+suicide.glm.step = step(glm(suicide2 ~ 1,  data = train.complete, family=binomial),
+                        ~ sex2 + age2 + race2 + BMI + drive_drink2 +
+                          smoke2 + alcohol2 + marijuana2 + sexual2 + condom2 + PE2 + 
+                          weight.management2 + UWCBs, direction = "both")
+glm.point.est =  round(exp(coef(suicide.glm.step)),4)
+glm.ci.est =  round(exp(confint(suicide.glm.step)),4)
+glm.p.value = round(summary(suicide.glm.step)$coefficients[,4],4)
+glm.est = cbind(glm.point.est,glm.ci.est,glm.p.value)
+
+df = data.frame(glm.est)
+colnames(df) = c("Odds Ratio", "2.5% CI", "97.5% CI", "p-value")
+rownames(df)= c("Intercept","Unhealthy Weight Control Behaviors","Marijuana",
+                "Sex","Smoke","Age",'Condom Usage',"Alcohol",'BMI',
+                "Physical Education Attendance",'Weight management:Lose weight',
+                'Weight management:Not trying to do anything',
+                'Weight management:Stay the same level',
+                "Drive a car after drinking alcohol",
+                "Race:Asian",
+                "Race:Black or African American",
+                "Race:Multiple",
+                "Race:Native Hawaiian/other PI",
+                "Race:White")
+
+
+
+df
+```
+
+
+```{r}
+glm_train_prob <- predict(suicide.glm.step, train.df, type = "response")
+glm_valid_prob <- predict(suicide.glm.step, valid.df, type = "response")
+
+confusionMatrix(factor(ifelse(glm_train_prob>0.5,1,0)),factor(train.df$suicide2))
+confusionMatrix(factor(ifelse(glm_valid_prob>0.5,1,0)),factor(valid.df$suicide2))
+```
+
+
+#### Naive Bayes Regressioon
+```{r}
+library(e1071)
+suicide.nb <- naiveBayes(suicide2 ~ sex2 + age2 + race2 + BMI +
+                     drive_drink2 + smoke2 + alcohol2 + marijuana2 + sexual2 + PE2 +
+                     weight.management2 + UWCBs,
+                         data = train.df)
+nb_train_prob  <- predict(suicide.nb, newdata = train.df, type = "raw")
+nb_train_class <- predict(suicide.nb, newdata = train.df)
+nb_valid_prob  <- predict(suicide.nb, newdata = valid.df, type = "raw")
+nb_valid_class <- predict(suicide.nb, newdata = valid.df)
+
+confusionMatrix(factor(nb_train_class),factor(train.df$suicide2))
+confusionMatrix(factor(nb_valid_class),factor(valid.df$suicide2))
+```
+
+
+```{r, warning=FALSE}
+library(MASS)
+suicide.lda <- lda(suicide2 ~ sex2 + age2 + race2 + BMI +
+                     drive_drink2 + smoke2 + alcohol2 + marijuana2 + sexual2 + PE2 +
+                     weight.management2 + UWCBs + condom2,
+                         data = train.df)
+lda_train_preds <- predict(suicide.lda, train.df)
+confusionMatrix(data = as.factor(lda_train_preds$class),
+                reference = as.factor(train.df$suicide2))
+lda_valid_preds <- predict(suicide.lda, valid.df)
+confusionMatrix(data = as.factor(lda_valid_preds$class),
+                reference = as.factor(valid.df$suicide2))
+```
+
+```{r}
+library(pROC)
+suicide.lda <- lda(suicide2 ~ sex2 + age2 + race2 + BMI +
+                     drive_drink2 + smoke2 + alcohol2 + marijuana2 + sexual2 + PE2 +
+                     weight.management2 + UWCBs + condom2,
+                         data = train.df)
+lda_train_preds <- predict(suicide.lda, train.df)
+confusionMatrix(data = as.factor(lda_train_preds$class),
+                reference = as.factor(train.df$suicide2))
+lda_valid_preds <- predict(suicide.lda, valid.df)
+confusionMatrix(data = as.factor(lda_valid_preds$class),
+                reference = as.factor(valid.df$suicide2))
+
+roc_glm <- roc(valid.df$suicide2, nb_valid_prob[,2])
+roc_lda <- roc(valid.df$suicide2, lda_valid_preds$posterior[,2])
+
+plot(roc_glm)
+plot(roc_lda, add=TRUE, col=2)
+
+legend(0.2, 0.4, legend=c("GLM.stepwise", "LDA"),
+       col=c("black", "red"), lty=1)
+```
+

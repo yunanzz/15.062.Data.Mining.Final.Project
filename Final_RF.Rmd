@@ -1,0 +1,111 @@
+---
+title: "Final Project RF"
+author: "Coco Hu"
+date: "3/12/2021 "
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data input
+
+```{r}
+### training set
+train.df <- read.csv("train.df.csv")
+train.df <- train.df[,c(20:31, 36)]   # select variables
+
+#remove NAs
+num.ds <- apply(train.df, 2, function(xx) sum(is.na(xx)))
+round(num.ds / nrow(train.df), 3)
+train.df <- na.omit(train.df)
+
+#convert into factors
+train.df[,c(2,3,5:11,13)] <- lapply(train.df[,c(2,3,5:11,13)], as.factor)
+
+
+
+### validation set  ###
+valid.df <- read.csv("valid.df.csv")
+valid.df <- valid.df[,c(20:31, 36)]   # select variables
+
+#remove NAs
+num.ds <- apply(valid.df, 2, function(xx) sum(is.na(xx)))
+round(num.ds / nrow(valid.df), 3)
+valid.df <- na.omit(valid.df)
+
+#convert into factors
+valid.df[,c(2,3,5:11,13)] <- lapply(valid.df[,c(2,3,5:11,13)], as.factor)
+
+```
+
+## Random forest
+
+Train model
+
+```{r}
+library(randomForest)
+library(caret)
+library(pROC)
+
+model.rf <- randomForest(suicide2 ~ . , data=train.df, importance=T)
+
+#variable importance
+model.rf$importance
+
+varImpPlot(model.rf, main="Variance importance")
+```
+
+Test model
+
+```{r}
+pred.rf <- predict(model.rf, newdata=valid.df)
+
+#confusion matrix
+confusionMatrix(pred.rf, valid.df$suicide2)
+
+#ROC
+roc.rf <- roc(as.numeric(valid.df$suicide2)-1, as.numeric(pred.rf)-1)
+plot(roc.rf, print.auc=T)
+
+```
+
+
+
+
+## Logit regression
+
+
+```{r}
+model.logit <- glm(suicide2 ~ ., data=train.df, family = binomial(link="logit"))
+prob.logit <- predict(model.logit, valid.df, type="response")
+pred.logit <- as.factor(ifelse(prob.logit<0.5, 0, 1))
+confusionMatrix(pred.logit, valid.df$suicide2)
+
+#ROC
+roc.logit <- roc(as.numeric(valid.df$suicide2)-1, as.numeric(pred.logit)-1)
+plot(roc.rf, print.auc=T)
+
+```
+
+## Classification trees
+
+```{r}
+library(class)
+pred. <- knn(train.df[,-6], valid.df[,-6], train.df[,6])
+library(rpart)
+model.tree <- rpart(suicide2 ~ ., data=train.df)
+pred.tree <- predict(model.tree, valid.df, type="class")
+confusionMatrix(pred.tree, valid.df$suicide2)
+
+#ROC
+roc.tree <- roc(as.numeric(valid.df$suicide2)-1, as.numeric(pred.tree)-1)
+plot(roc.tree, print.auc=T)
+
+```
+
+
+
+
+

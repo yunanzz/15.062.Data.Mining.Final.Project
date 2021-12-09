@@ -1,0 +1,82 @@
+---
+title: "DM_Final_Project_Processing"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r Preliminary analysis}
+#Input data for preliminary analysis
+library(ggplot2)
+df.pre <- read.csv("DM_data_pre.csv", header=TRUE)
+View(df.pre)
+df <- read.csv("dataset_behavior.csv", header=TRUE)
+
+```
+
+```{r}
+#NA proportion 
+num.df.pre <- apply(df.pre, 2, function(xx)sum(is.na(xx)))
+round(num.df.pre/nrow(df.pre), 3)
+# The NA proportions of our data set are all smaller than 10%, so we consider them to be significant for use of analysis.
+```
+
+```{r}
+
+```
+
+```{r}
+#In order to obtain valid dependent variable, we decided to delete rows of NA under suicide
+df.pre <- df.pre[!is.na(df.pre$suicide), ]
+
+# There are alphabetic data in our raw data set, which cannot be directly used for interpretation and analysis. Therefore we referred back to the corresponding question of each feature and transformed to numeric values.
+
+# For example, for race, we first transformed multiple choice answers to words to grasp an understanding of the values. Then we found that race could be tricky because some people have multiple races, so we chose to create a new value "multiple" which accounts for the mix-blood. Then we assigned them with numeric values for the sake of further analysis and created a new factor for them "race2."
+# We applied the same rule for the rest of the factors, generating a processed set of factors from age2 to vomit.laxative2. 
+
+#Transform race value to numeric
+race_value <- factor(df.pre$race)
+levels(race_value)
+df.pre$race <- as.numeric(race_value)
+
+df.pre$sex2[df.pre$sex2=="1"]<-0
+df.pre$sex2[df.pre$sex2=="2"]<-1
+
+
+df.pre$weight.management2[df.pre$weight.management2=="Gain weight"]<-3
+df.pre$weight.management2[df.pre$weight.management2=="Stay the same weight"]<-2
+df.pre$weight.management2[df.pre$weight.management2=="Not trying to do anything"]<-1
+df.pre$weight.management2[df.pre$weight.management2=="Lose weight"]<-0
+
+
+df.pre$fast2[df.pre$fast2=="Yes"]<-1
+df.pre$fast2[df.pre$fast2=="No"]<-0
+
+df.pre$diet.pills2[df.pre$diet.pills2=="Yes"]<-1
+df.pre$diet.pills2[df.pre$diet.pills2=="No"]<-0
+
+df.pre$vomit.laxative2[df.pre$vomit.laxative2=="Yes"]<-1
+df.pre$vomit.laxative2[df.pre$vomit.laxative2=="No"]<-0
+
+
+```
+
+```{r}
+#Correlation between factors
+corr_df <- df.pre[c(6:7, 20:34)]
+corr_df <- na.omit(corr_df)
+corr_df <- data.matrix(corr_df)
+corr_pre = cor(corr_df)
+heatmap(corr_pre, Rowv = NA, Colv = NA)
+```
+#According to the results above on heatmap, we can see that different approaches of weight management are relatively highly correlated with each other. To build our model more efficient, we then combined the related factors: "weight management2", "diet.pills2", "fast2", and "vomit.laxative2" to one factor "UWCBs." If UWCBs = 1, it indicates the person has taken one of the 3 approaches to lose weight. If UWCBs = 0, it means the person has not taken actions to lose weight. In this way, the level of complexity of our model is reduced, which would benefit model efficiency and interpretation.
+
+
